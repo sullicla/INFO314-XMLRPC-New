@@ -42,25 +42,24 @@ class Call {
 
     public boolean hasValidArguments() {
 
-        // false if An argument is not of type integer.
         for (Object obj : args) {
             if (!(obj instanceof Integer)) {
                 return false;
             }
         }
 
-        // Add or multiply
+        // add or multiply
         if (name.equals(operations[0])
                 || name.equals(operations[2])) {
             return true;
         }
-        // Subtract, divide, or modulo
+        // subtract, divide, or modulo
         else if (name.equals(operations[1])
                 || name.equals(operations[3])
                 || name.equals(operations[4])) {
             return args.size() == 2;
         }
-        // False if unknown operation
+        // false if unknown
         else {
             return false;
         }
@@ -69,40 +68,37 @@ class Call {
     public int getResult() throws XMLRPCException {
         int result = 0;
 
-        // Add
+        // add
         if (name.equals(operations[0])) {
             for (Object obj : args) {
                 result += (Integer) obj;
             }
         }
-        // Subtract
+        // subtract
         else if (name.equals(operations[1])) {
             result = (Integer) args.get(0) - (Integer) args.get(1);
         }
-        // Multiply
+        // multiply
         else if (name.equals(operations[2])) {
             result = 1;
             for (Object obj : args) {
                 result *= (Integer) obj;
             }
         }
-        // Divide
+        // divide
         else if (name.equals(operations[3])) {
             if ((Integer) args.get(1) == 0) {
                 throw new XMLRPCException(1, "Divide by zero");
             }
-
             result = (Integer) args.get(0) / (Integer) args.get(1);
         }
-        // Modulo
+        // modulo
         else if (name.equals(operations[4])) {
             if ((Integer) args.get(1) == 0) {
                 throw new XMLRPCException(1, "Divide by zero");
             }
-
             result = (Integer) args.get(0) % (Integer) args.get(1);
         }
-
         return result;
     }
 }
@@ -113,32 +109,31 @@ public class App {
 
     public static void main(String[] args) {
 
-        port(8080);
-        LOG.info("Starting up on port 8080");
+        port(4567);
+        LOG.info("Starting up on port 4567");
 
-        // Handle RPC requests
+        // handle incoming XML-RPC requests
+
+        post("/RPC", (request, response) -> {
+            response.status(500);
+            return "TBD";
+        });
         post("/RPC", (request, response) -> {
             String responseString = "";
 
             try {
                 Call call = extractXMLRPCCall(request.body());
 
-                // Valid, return result.
                 if (call.hasValidArguments()) {
                     responseString = GetResponseSuccessBody(call.getResult());
-                }
-                // Bad arguments, return error message.
-                else {
+                } else {
                     responseString = GetResponseFailBody(1, "Unexpected arugments for the requested method type.");
                 }
-            }
-            // Exception occured while parsing the request or processing it
-            catch (XMLRPCException e) {
+            } catch (XMLRPCException e) {
                 responseString = GetResponseFailBody(e.GetFaultCode(), e.getMessage());
             } catch (Exception e) {
                 responseString = e.getMessage();
             }
-
             InetAddress addr;
             addr = InetAddress.getLocalHost();
             response.header("Host", addr.getHostName());
@@ -146,7 +141,6 @@ public class App {
             return responseString;
         });
 
-        // Return 405 on any other type of HTTP request
         post("/", (request, response) -> {
             response.status(404);
             return "Not found.";
@@ -180,13 +174,10 @@ public class App {
         Document doc = dBuilder.parse(new InputSource(new StringReader(xmlString)));
         doc.getDocumentElement().normalize();
 
-        // Assume there is only 1 method.
         Element method = (Element) doc.getElementsByTagName("methodCall").item(0);
 
-        // Get method type.
         call.name = method.getElementsByTagName("methodName").item(0).getTextContent();
 
-        // Get params.
         Element paramList = (Element) method.getElementsByTagName("params").item(0);
         NodeList params = paramList.getElementsByTagName("param");
         for (int i = 0; i < params.getLength(); ++i) {
@@ -194,16 +185,13 @@ public class App {
             Element paramElement = (Element) params.item(i);
             Element valueElement = (Element) paramElement.getElementsByTagName("value").item(0);
 
-            // Check that there is a child element with the i4 tag.
             NodeList typeElements = paramElement.getElementsByTagName("i4");
             if (typeElements.getLength() != 1) {
                 throw new XMLRPCException(3,
                         "A param was requested that is not of type i4, this is not supported.");
             }
-
             call.args.add(Integer.parseInt(valueElement.getTextContent()));
         }
-
         return call;
     }
 
@@ -246,7 +234,6 @@ public class App {
         Element structElement = doc.createElement("struct");
         faultValueElement.appendChild(structElement);
 
-        // ---------Fault Code----------------
         Element member1Element = doc.createElement("member");
         structElement.appendChild(member1Element);
 
@@ -261,7 +248,6 @@ public class App {
         member1TypeElement.setTextContent("" + faultCode);
         member1ValueElement.appendChild(member1TypeElement);
 
-        // ---------Fault Messsage----------------
         Element member2Element = doc.createElement("member");
         structElement.appendChild(member2Element);
 
@@ -280,7 +266,7 @@ public class App {
     }
 
     private static String GetStringFromDoc(Document doc) throws Exception {
-        // Transform the document into a string.
+        // turn document into a string.
         StringWriter sw = new StringWriter();
         TransformerFactory tf = TransformerFactory.newInstance();
         Transformer transformer = tf.newTransformer();

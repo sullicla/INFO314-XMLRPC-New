@@ -1,25 +1,23 @@
-import java.io.*;
-import java.net.*;
-import java.net.http.*;
-import java.net.http.HttpRequest.BodyPublishers;
-import org.w3c.dom.*;
-import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.xml.sax.InputSource;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import javax.xml.parsers.*;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.OutputKeys;
-import javax.xml.xpath.*;
 
-/**
- * This approach uses the java.net.http.HttpClient classes, which
- * were introduced in Java11.
- */
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
+
 public class Client {
     private static DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
     private static String urlString = "";
@@ -44,33 +42,31 @@ public class Client {
     }
 
     public static int add(Integer... params) throws Exception {
-        String xmlString = GetXML("add", params);
-        return SendCalculationRequest(xmlString);
+        String xmlString = getXML("add", params);
+        return sendCalculationRequest(xmlString);
     }
 
     public static int subtract(int lhs, int rhs) throws Exception {
-        String xmlString = GetXML("subtract", lhs, rhs);
-        return SendCalculationRequest(xmlString);
+        String xmlString = getXML("subtract", lhs, rhs);
+        return sendCalculationRequest(xmlString);
     }
 
     public static int multiply(Integer... params) throws Exception {
-        String xmlString = GetXML("multiply", params);
-        return SendCalculationRequest(xmlString);
+        String xmlString = getXML("multiply", params);
+        return sendCalculationRequest(xmlString);
     }
 
     public static int divide(int lhs, int rhs) throws Exception {
-        String xmlString = GetXML("divide", lhs, rhs);
-        return SendCalculationRequest(xmlString);
+        String xmlString = getXML("divide", lhs, rhs);
+        return sendCalculationRequest(xmlString);
     }
 
     public static int modulo(int lhs, int rhs) throws Exception {
-        String xmlString = GetXML("modulo", lhs, rhs);
-        return SendCalculationRequest(xmlString);
+        String xmlString = getXML("modulo", lhs, rhs);
+        return sendCalculationRequest(xmlString);
     }
 
-    private static String GetXML(String operation, Integer... params) throws Exception {
-
-        // Build document following the method request format.
+    private static String getXML(String operation, Integer... params) throws Exception {
         DocumentBuilder dBuilder = dbf.newDocumentBuilder();
         Document doc = dBuilder.newDocument();
 
@@ -81,12 +77,12 @@ public class Client {
         methodNameElement.setTextContent(operation);
         rootElement.appendChild(methodNameElement);
 
-        Element paramsListelement = doc.createElement("params");
-        rootElement.appendChild(paramsListelement);
+        Element paramsListElement = doc.createElement("params");
+        rootElement.appendChild(paramsListElement);
 
         for (Integer paramValue : params) {
             Element paramElement = doc.createElement("param");
-            paramsListelement.appendChild(paramElement);
+            paramsListElement.appendChild(paramElement);
 
             Element paramValueElement = doc.createElement("value");
             paramElement.appendChild(paramValueElement);
@@ -96,10 +92,10 @@ public class Client {
             paramValueElement.appendChild(paramTypeElement);
         }
 
-        return GetStringFromDoc(doc);
+        return getStringFromDoc(doc);
     }
 
-    private static int SendCalculationRequest(String xml) throws Exception {
+    private static int sendCalculationRequest(String xml) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .POST(HttpRequest.BodyPublishers.ofString(xml))
                 .header("Content-Type", "text/xml")
@@ -109,26 +105,21 @@ public class Client {
         HttpClient client = HttpClient.newHttpClient();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-        // If not 200, something went wrong when processing the request on the server,
-        // throw a exception with info from server.
         if (response.statusCode() != 200) {
-            throw new Exception("Responded with status :" + response.statusCode() +
-                    ": " + response.body());
+            throw new Exception("Responded with status: " + response.statusCode() + ": " + response.body());
         }
 
-        return GetResponseFromXML(response.body());
+        return getResponseFromXML(response.body());
     }
 
-    private static int GetResponseFromXML(String xmlString) throws Exception {
+    private static int getResponseFromXML(String xmlString) throws Exception {
         DocumentBuilder dBuilder = dbf.newDocumentBuilder();
         Document doc = dBuilder.parse(new InputSource(new StringReader(xmlString)));
         doc.getDocumentElement().normalize();
 
-        // Assume there is only 1 method.
         Element response = (Element) doc.getElementsByTagName("methodResponse").item(0);
         NodeList fault = doc.getElementsByTagName("fault");
 
-        // Handle fail
         if (fault != null && fault.getLength() > 0) {
             Element faultElement = (Element) fault.item(0);
             Element value = (Element) faultElement.getElementsByTagName("value").item(0);
@@ -137,11 +128,13 @@ public class Client {
             NodeList members = struct.getElementsByTagName("member");
             String faultCode = "";
             String faultMessage = "";
+
             for (int i = 0; i < members.getLength(); ++i) {
                 Element memberElement = (Element) members.item(i);
-                Element memeberNameElement = (Element) memberElement.getElementsByTagName("name").item(0);
-                String memberName = memeberNameElement.getTextContent();
+                Element memberNameElement = (Element) memberElement.getElementsByTagName("name").item(0);
+                String memberName = memberNameElement.getTextContent();
                 Element memberValue = (Element) memberElement.getElementsByTagName("value").item(0);
+
                 if (memberName.equals("faultCode")) {
                     faultCode = memberValue.getTextContent();
                 } else if (memberName.equals("faultString")) {
@@ -149,16 +142,13 @@ public class Client {
                 }
             }
 
-            throw new Exception("Server could not handle request. Fault code:" + faultCode + ". " + faultMessage);
-        }
-        // Handle Success
-        else {
-            // Assume just one param.
+            throw new Exception("Server could not handle request. Fault code: " + faultCode + ". " + faultMessage);
+        } else {
             Element responseParam = (Element) response.getElementsByTagName("param").item(0);
             Element value = (Element) responseParam.getElementsByTagName("value").item(0);
             NodeList type = value.getElementsByTagName("i4");
+
             if (type == null || type.getLength() != 1) {
-                // Returned wrong type
                 throw new Exception("Server responded with incorrect type.");
             }
 
@@ -167,11 +157,11 @@ public class Client {
         }
     }
 
-    private static String GetStringFromDoc(Document doc) throws Exception {
-        // Transform the document into a string.
+    private static String getStringFromDoc(Document doc) throws Exception {
         StringWriter sw = new StringWriter();
         TransformerFactory tf = TransformerFactory.newInstance();
         Transformer transformer = tf.newTransformer();
+        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
         transformer.transform(new DOMSource(doc), new StreamResult(sw));
         return sw.toString();
     }
